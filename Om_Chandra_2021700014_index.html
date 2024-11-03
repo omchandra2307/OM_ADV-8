@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Forest Data Visualizations</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        svg {
+            margin: 20px;
+            border: 1px solid #ddd;
+        }
+
+        h2 {
+            text-align: center;
+        }
+
+        div {
+            display: inline-block;
+            vertical-align: top;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Forest Data Visualizations</h1>
+    <!-- Dropdown for Year Selection -->
+    <div>
+        <label for="yearSelect">Select Year:</label>
+        <select id="yearSelect">
+            <option value="all">All Years</option>
+            <!-- Year options will be dynamically populated -->
+        </select>
+    </div>
+
+    <!-- Containers for visualizations -->
+    <div id="bar-chart">
+        <h2>Bar Chart (Count by Species Type)</h2>
+    </div>
+    <div id="pie-chart">
+        <h2>Pie Chart (Species Distribution)</h2>
+    </div>
+    <div id="histogram">
+        <h2>Histogram (Tree Height Distribution)</h2>
+    </div>
+    <div id="scatter-plot">
+        <h2>Scatter Plot (Canopy Cover vs. Tree Height)</h2>
+    </div>
+    <div id="line-chart">
+        <h2>Line Chart (Average Tree Height by Flora Species)</h2>
+    </div>
+    <script>
+        const width = 500, height = 300;
+        d3.csv("forest.csv").then(function (data) {
+            // Convert numerical values to numbers and filter out invalid data
+            data.forEach(d => {
+                d.Count = +d.Count;
+                d.Canopy_Cover = +d.Canopy_Cover;
+                d.Tree_Height = +d.Tree_Height;
+                d.Soil_PH = +d.Soil_PH;
+                d.Avg_Temperature = +d.Avg_Temperature;
+                d.Rainfall_mm = +d.Rainfall_mm;
+                d.Year = +d.Year;
+                d.CO2_Sequestration = +d.CO2_Sequestration;
+                d.Biodiversity_Index = +d.Biodiversity_Index;
+            });
+
+            // Filter out invalid data (e.g., rows where Tree_Height or CO2_Sequestration is null)
+            const validData = data.filter(d => d.Tree_Height !== null && d.CO2_Sequestration !== null);
+
+            // Populate the dropdown with available years
+            const years = Array.from(new Set(validData.map(d => d.Year))).sort((a, b) => a - b);
+            d3.select("#yearSelect").append("option").text("All Years").attr("value", "all");  // Add "all" option
+            years.forEach(year => {
+                d3.select("#yearSelect").append("option").text(year).attr("value", year);
+            });
+
+            // Create the charts with the initial unfiltered data (all years)
+            createBarChart(validData);
+            createPieChart(validData);
+            createHistogram(validData);
+            createScatterPlot(validData);
+            createLineChartForFlora(validData);  // Line chart stays unfiltered
+
+            // Event listener for dropdown change
+            d3.select("#yearSelect").on("change", function () {
+                const selectedYear = this.value;
+
+                // Filter data based on selected year
+                const filteredData = selectedYear === "all" ? validData : validData.filter(d => d.Year == selectedYear);
+
+                // Clear the existing charts
+                d3.select("#bar-chart svg").remove();
+                d3.select("#pie-chart svg").remove();
+                d3.select("#histogram svg").remove();
+                d3.select("#scatter-plot svg").remove();
+
+                // Recreate charts with filtered data
+                createBarChart(filteredData);
+                createPieChart(filteredData);
+                createHistogram(filteredData);
+                createScatterPlot(filteredData);
+            });
+        });
+
+
+        function createBarChart(data) {
+
+            const margin = { top: 20, right: 30, bottom: 40, left: 40 };
+
+            const svg = d3.select("#bar-chart")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const speciesCount = d3.rollup(data, v => d3.sum(v, d => d.Count), d => d.Species_Type);
+            const x = d3.scaleBand()
+                .domain(speciesCount.keys())
+                .range([0, width - margin.left - margin.right])
+                .padding(0.2);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(speciesCount.values())])
+                .range([height - margin.top - margin.bottom, 0]);
+
+            svg.selectAll(".bar")
+                .data(Array.from(speciesCount))
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d[0]))
+                .attr("y", d => y(d[1]))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - margin.bottom - margin.top - y(d[1]))
+                .attr("fill", "steelblue");
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height - margin.bottom - margin.top})`)
+                .call(d3.axisBottom(x));
+
+            svg.append("g")
+                .call(d3.axisLeft(y));
+        }
+
+        function createPieChart(data) {
+            const radius = Math.min(width, height) / 2 - 10;
+
+            const svg = d3.select("#pie-chart")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .append("g")
+                .attr("transform", `translate(${width / 2}, ${height / 2})`);
+
+            const speciesCount = d3.rollup(data, v => v.length, d => d.Species_Name);
+
+            const pie = d3.pie().value(d => d[1]);
+            const arc = d3.arc().innerRadius(0).outerRadius(radius);
+
+            const color = d3.scaleOrdinal()
+                .domain(speciesCount.keys())
+                .range(d3.schemeCategory10);
+
+            const data_ready = pie(Array.from(speciesCount));
+
+            // Draw the pie chart
+            svg.selectAll('path')
+                .data(data_ready)
+                .enter()
+                .append('path')
+                .attr('d', arc)
+                .attr('fill', d => color(d.data[0]))
+                .attr("stroke", "white")
+                .style("stroke-width", "2px");
+
+            // Add labels
+            svg.selectAll('text')
+                .data(data_ready)
+                .enter()
+                .append('text')
+                .text(d => `${d.data[0]}: ${d.data[1]}`)  // Display species name and count
+                .attr("transform", d => `translate(${arc.centroid(d)})`)
+                .style("text-anchor", "middle")
+                .style("font-size", "12px")
+                .style("fill", "black");
+        }
+
+        function createHistogram(data) {
+            const margin = { top: 20, right: 30, bottom: 40, left: 40 };
+            const width = 800; // Set appropriate width
+            const height = 400; // Set appropriate height
+
+            const svg = d3.select("#histogram")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            // Filter and parse Tree_Height values
+            const heightValues = data.map(d => +d["Tree_Height (m)"]).filter(d => !isNaN(d) && d !== null);
+
+            if (heightValues.length === 0) {
+                console.error("No valid Tree_Height data available for histogram.");
+                return;
+            }
+
+            const x = d3.scaleLinear()
+                .domain([d3.min(heightValues), d3.max(heightValues)])
+                .range([0, width - margin.left - margin.right]);
+
+            const histogram = d3.histogram()
+                .value(d => d)
+                .domain(x.domain())
+                .thresholds(x.ticks(20));
+
+            const bins = histogram(heightValues);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(bins, d => d.length)])
+                .range([height - margin.top - margin.bottom, 0]);
+
+            svg.selectAll("rect")
+                .data(bins)
+                .enter()
+                .append("rect")
+                .attr("x", d => x(d.x0))
+                .attr("y", d => y(d.length))
+                .attr("width", d => Math.max(0, x(d.x1) - x(d.x0) - 1))
+                .attr("height", d => height - margin.bottom - margin.top - y(d.length))
+                .style("fill", "#69b3a2");
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height - margin.bottom - margin.top})`)
+                .call(d3.axisBottom(x));
+
+            svg.append("g")
+                .call(d3.axisLeft(y));
+        }
+
+        function createScatterPlot(data) {
+            const margin = { top: 20, right: 30, bottom: 40, left: 40 };
+            const width = 800;
+            const height = 400;
+
+            const svg = d3.select("#scatter-plot")
+                .append("svg")
+                .attr("width", width)
+                .attr("height", height)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            // Filter valid data and convert to numbers
+            const validData = data.filter(d =>
+                !isNaN(d["Canopy_Cover (%)"]) && !isNaN(d["Tree_Height (m)"])
+            );
+
+            const canopyValues = validData.map(d => +d["Canopy_Cover (%)"]);
+            const heightValues = validData.map(d => +d["Tree_Height (m)"]);
+
+            // Normalization functions
+            const normalize = (value, min, max) => (value - min) / (max - min);
+
+            const canopyMin = d3.min(canopyValues);
+            const canopyMax = d3.max(canopyValues);
+            const heightMin = d3.min(heightValues);
+            const heightMax = d3.max(heightValues);
+
+            const normalizedData = validData.map(d => ({
+                canopy: normalize(+d["Canopy_Cover (%)"], canopyMin, canopyMax),
+                height: normalize(+d["Tree_Height (m)"], heightMin, heightMax),
+            }));
+
+            // Define scales for normalized data (range remains the same)
+            const x = d3.scaleLinear().domain([0, 1]).range([0, width - margin.left - margin.right]);
+            const y = d3.scaleLinear().domain([0, 1]).range([height - margin.top - margin.bottom, 0]);
+
+            // Plot the points
+            svg.selectAll("circle")
+                .data(normalizedData)
+                .enter()
+                .append("circle")
+                .attr("cx", d => x(d.canopy))
+                .attr("cy", d => y(d.height))
+                .attr("r", 5)
+                .style("fill", "steelblue");
+
+            // Add X axis
+            svg.append("g")
+                .attr("transform", `translate(0,${height - margin.top - margin.bottom})`)
+                .call(d3.axisBottom(x));
+
+            // Add Y axis
+            svg.append("g").call(d3.axisLeft(y));
+        }
+        function createLineChartForFlora(data) {
+            const margin = { top: 20, right: 30, bottom: 50, left: 60 };
+            const width = 800 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+
+            const svg = d3.select("#line-chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            // Filter data to include only Flora species
+            const floraData = data.filter(d => d.Species_Type === "Flora");
+
+            // Group data by Year and calculate the average Tree_Height for each year
+            const avgHeightPerYear = d3.groups(floraData, d => d.Year)
+                .map(([year, records]) => ({
+                    year: +year,
+                    avgHeight: d3.mean(records, d => d["Tree_Height (m)"])
+                }));
+
+            // Create an array of all years from the min to the max year
+            const allYears = d3.range(d3.min(avgHeightPerYear, d => d.year), d3.max(avgHeightPerYear, d => d.year) + 1);
+
+            // Map the avgHeightPerYear to fill missing years with `null`
+            const completeData = allYears.map(year => {
+                const yearData = avgHeightPerYear.find(d => d.year === year);
+                return yearData ? yearData : { year: year, avgHeight: null };
+            });
+
+            // Define scales
+            const x = d3.scaleLinear()
+                .domain(d3.extent(completeData, d => d.year))
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(completeData, d => d.avgHeight)])
+                .nice()  // Add nice rounding for the y-axis
+                .range([height, 0]);
+
+            // Add X axis
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).tickFormat(d3.format("d")));
+
+            // Add Y axis
+            svg.append("g")
+                .call(d3.axisLeft(y));
+
+            // Add the line for average Tree_Height per year, with handling for missing data (nulls)
+            svg.append("path")
+                .datum(completeData)
+                .attr("fill", "none")
+                .attr("stroke", "steelblue")
+                .attr("stroke-width", 2)
+                .attr("d", d3.line()
+                    .defined(d => d.avgHeight !== null)  // Ignore points where avgHeight is null
+                    .x(d => x(d.year))
+                    .y(d => y(d.avgHeight))
+                );
+
+            // Add points at each year where data exists
+            svg.selectAll("circle")
+                .data(completeData.filter(d => d.avgHeight !== null))  // Only add circles for valid data points
+                .enter()
+                .append("circle")
+                .attr("cx", d => x(d.year))
+                .attr("cy", d => y(d.avgHeight))
+                .attr("r", 4)
+                .attr("fill", "steelblue");
+
+            // Add labels for valid data points
+            svg.selectAll(".label")
+                .data(completeData.filter(d => d.avgHeight !== null))
+                .enter()
+                .append("text")
+                .attr("x", d => x(d.year))
+                .attr("y", d => y(d.avgHeight) - 10)
+                .attr("text-anchor", "middle")
+                .style("fill", "black")
+                .style("font-size", "12px")
+                .text(d => d3.format(".2f")(d.avgHeight));
+        }
+
+    </script>
+</body>
+
+</html>
